@@ -16,6 +16,7 @@
   --accent-soft:#e8efe6;
   --shadow:    0 1px 2px rgba(60,52,40,.04), 0 8px 30px rgba(60,52,40,.06);
   --scrim:     rgba(42,35,26,.34);
+  --orp:       #c4694b;
 
   --reader-size: 19px;
   --reader-width: 38rem;
@@ -38,10 +39,13 @@
   --accent-soft:#33362f;
   --shadow:    0 1px 2px rgba(0,0,0,.25), 0 8px 30px rgba(0,0,0,.3);
   --scrim:     rgba(0,0,0,.55);
+  --orp:       #e79a78;
   color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
 
 html, body { height: 100%; }
 
@@ -329,7 +333,232 @@ body:not(.is-reading) .progress > div { opacity: 0; }
   .reader-wrap { padding: 1.6rem 1rem 5rem; }
 }
 
+/* ============================================================
+   Modo velocidad — RSVP en torno a la ORP
+   Móvil primero: el pivote queda anclado al centro exacto y los
+   controles caen bajo el pulgar.
+   ============================================================ */
+
+.rsvp {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  animation: fade .28s ease both;
+}
+
+/* el documento de fondo no debe desplazarse mientras se lee a velocidad */
+body.rsvp-open { overflow: hidden; }
+
+.rsvp-head {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .5rem .7rem;
+  flex: 0 0 auto;
+}
+.rsvp-title {
+  flex: 1;
+  text-align: center;
+  font-size: .8rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- zona del pivote --- */
+.rsvp-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(.7rem, 4vh, 2rem);
+  padding: 0 .4rem;
+  cursor: pointer;
+  min-height: 0;
+}
+
+.rsvp-guide {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: clamp(1.2rem, 7vw, 2.6rem);
+  height: 14px;
+  opacity: .85;
+}
+.rsvp-guide span {
+  width: 1px;
+  height: 9px;
+  background: color-mix(in srgb, var(--text) 28%, transparent);
+  border-radius: 1px;
+}
+.rsvp-guide .mid {
+  height: 15px;
+  width: 1.5px;
+  background: var(--orp);
+  opacity: .75;
+}
+
+.rsvp-focal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: baseline;
+  width: 100%;
+  font-family: var(--read-font);
+  font-size: var(--rsvp-size, 48px);
+  line-height: 1.12;
+  letter-spacing: -.005em;
+  color: var(--text);
+  white-space: nowrap;
+}
+.rsvp-focal .pre  { text-align: right; }
+.rsvp-focal .post { text-align: left; }
+.rsvp-focal .orp  { color: var(--orp); }
+.rsvp-focal.long  { font-size: calc(var(--rsvp-size, 48px) * .62); }
+
+.rsvp.paused .rsvp-focal { opacity: .55; }
+
+/* --- controles --- */
+.rsvp-foot {
+  flex: 0 0 auto;
+  padding: .35rem .8rem calc(.7rem + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: .65rem;
+}
+
+.rsvp-meter { display: flex; flex-direction: column; gap: .3rem; }
+.rsvp-line {
+  height: 3px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+.rsvp-line > i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width .18s linear;
+}
+.rsvp-legend {
+  display: flex;
+  justify-content: space-between;
+  font-size: .72rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.rsvp-transport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .3rem;
+}
+.rsvp-transport .rq {
+  min-width: 52px;
+  min-height: 46px;
+  font-size: .95rem;
+}
+.rsvp-play {
+  appearance: none;
+  border: none;
+  width: 74px;
+  height: 74px;
+  margin: 0 .35rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fffdfa;
+  font-size: 1.7rem;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 45%, transparent);
+  transition: transform .12s ease, background .2s ease;
+}
+.rsvp-play:active { transform: scale(.94); }
+.rsvp-play.playing { background: var(--accent-ink); }
+
+.rsvp-speed {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: .3rem .5rem;
+}
+.rsvp-speed .ctl { min-width: 40px; min-height: 40px; font-size: 1.1rem; }
+.rsvp-speed input[type="range"] {
+  flex: 1;
+  appearance: none;
+  -webkit-appearance: none;
+  height: 26px;
+  background: transparent;
+  cursor: pointer;
+}
+.rsvp-speed input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 4px;
+  background: var(--line);
+}
+.rsvp-speed input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  margin-top: -9px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  box-shadow: 0 1px 4px rgba(0,0,0,.18);
+}
+.rsvp-speed input[type="range"]::-moz-range-track {
+  height: 4px; border-radius: 4px; background: var(--line);
+}
+.rsvp-speed input[type="range"]::-moz-range-thumb {
+  width: 20px; height: 20px; border: 2px solid var(--surface);
+  border-radius: 50%; background: var(--accent);
+}
+.rsvp-speed output {
+  font-size: .82rem;
+  color: var(--text-soft);
+  min-width: 4.6rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.rsvp-speed output b {
+  font-size: 1.02rem;
+  color: var(--text);
+  font-weight: 650;
+}
+
+/* en pantallas cortas, aprieta */
+@media (max-height: 620px) {
+  .rsvp-body { gap: .4rem; }
+  .rsvp-play { width: 62px; height: 62px; font-size: 1.4rem; }
+  .rsvp-guide { height: 10px; }
+}
+
+/* en escritorio, el pivote no necesita ser gigante */
+@media (min-width: 900px) {
+  .rsvp-body { gap: clamp(1rem, 6vh, 3rem); }
+  .rsvp-foot { padding-left: 1.6rem; padding-right: 1.6rem; }
+  .rsvp-transport { gap: .7rem; }
+}
+
 @media print {
-  .bar, .progress, .toc, .scrim { display: none !important; }
+  .bar, .progress, .toc, .scrim, .rsvp { display: none !important; }
   body { background: #fff; }
 }
+

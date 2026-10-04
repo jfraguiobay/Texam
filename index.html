@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Texam — lector de textos</title>
-<meta name="description" content="Texam es un lector de textos minimalista: abre txt, md, epub, docx, doc, rtf, html y pdf directamente en tu navegador. Nada se sube a ningún servidor.">
+<title>Texam — lector de velocidad (RSVP)</title>
+<meta name="description" content="Texam lee por ti: palabra a palabra en un punto fijo (RSVP con ORP). Arrastra txt, md, epub, docx, doc, rtf, html o pdf. Nada sale de tu equipo.">
 <meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f3ee">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%238ba888'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='%23fffdfa' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -16,9 +17,10 @@
   <div class="brand">Texam<span> · lector</span></div>
   <div class="book-title" id="bookTitle"></div>
   <div class="spacer"></div>
+  <button class="ctl" id="modeBtn" title="Cambiar de modo de lectura" hidden>Velocidad</button>
   <button class="ctl" id="fontDec" title="Reducir texto" aria-label="Reducir texto">A−</button>
   <button class="ctl" id="fontInc" title="Ampliar texto" aria-label="Ampliar texto">A+</button>
-  <button class="ctl" id="themeBtn" title="Cambiar tema" aria-label="Cambiar tema">◐</button>
+  <button class="ctl" id="themeBtn" title="Cambiar tema" aria-label="Cambiar tema">☾</button>
   <button class="ctl primary" id="openBtn">Abrir</button>
   <input type="file" id="fileInput" hidden
          accept=".txt,.text,.md,.markdown,.mdown,.epub,.doc,.docx,.rtf,.html,.htm,.xhtml,.pdf,.log,.csv,text/*,application/epub+zip,application/pdf">
@@ -29,7 +31,7 @@
 <main class="stage">
   <section class="drop" id="drop">
     <h1>Texam</h1>
-    <p class="sub">Lee lo que quieras. Ligero, tranquilo y sin ruido.</p>
+    <p class="sub">Las palabras vienen a ti. Los ojos no se mueven.</p>
 
     <div class="zone" id="zone">
       <div class="big">📖</div>
@@ -45,6 +47,55 @@
   </div>
   <div class="doc-meta" id="docMeta" hidden></div>
 </main>
+
+<!-- ============ Modo velocidad: RSVP en torno a la ORP ============ -->
+<section class="rsvp" id="rsvp" hidden aria-label="Lectura por RSVP">
+  <header class="rsvp-head">
+    <button class="ctl" id="rsvpExit" title="Cerrar" aria-label="Cerrar">✕</button>
+    <button class="ctl" id="rFontDec" title="Pivote más pequeño" aria-label="Pivote más pequeño">A−</button>
+    <button class="ctl" id="rFontInc" title="Pivote más grande" aria-label="Pivote más grande">A+</button>
+    <div class="rsvp-title" id="rsvpTitle"></div>
+    <button class="ctl" id="rsvpTheme" title="Cambiar tema" aria-label="Cambiar tema">☾</button>
+  </header>
+
+  <div class="rsvp-body" id="rsvpBody" role="button" tabindex="0"
+       aria-label="Pulsa para reproducir o pausar">
+    <div class="rsvp-guide top" aria-hidden="true">
+      <span></span><span></span><span class="mid"></span><span></span><span></span>
+    </div>
+    <div class="rsvp-focal" id="rsvpFocal" aria-live="off">
+      <span class="pre" id="rPre"></span><span class="orp" id="rOrp"></span><span class="post" id="rPost"></span>
+    </div>
+    <div class="rsvp-guide bottom" aria-hidden="true">
+      <span></span><span></span><span class="mid"></span><span></span><span></span>
+    </div>
+  </div>
+
+  <footer class="rsvp-foot">
+    <div class="rsvp-meter">
+      <div class="rsvp-line"><i id="rsvpBar"></i></div>
+      <div class="rsvp-legend">
+        <span id="rsvpPos">0 / 0</span>
+        <span id="rsvpEta"></span>
+      </div>
+    </div>
+
+    <div class="rsvp-transport">
+      <button class="ctl rq" id="rPrevS" title="Frase anterior" aria-label="Frase anterior">⏮</button>
+      <button class="ctl rq" id="rPrev10" title="10 palabras atrás" aria-label="10 palabras atrás">−10</button>
+      <button class="rsvp-play" id="rPlay" title="Reproducir / pausar (espacio)" aria-label="Reproducir">▶</button>
+      <button class="ctl rq" id="rNext10" title="10 palabras adelante" aria-label="10 palabras adelante">+10</button>
+      <button class="ctl rq" id="rNextS" title="Frase siguiente" aria-label="Frase siguiente">⏭</button>
+    </div>
+
+    <div class="rsvp-speed">
+      <button class="ctl" id="spdDown" aria-label="Más lento">−</button>
+      <input type="range" id="spdRange" min="150" max="900" step="10" value="300" aria-label="Velocidad en palabras por minuto">
+      <output id="spdVal" for="spdRange"><b>300</b> ppm</output>
+      <button class="ctl" id="spdUp" aria-label="Más rápido">+</button>
+    </div>
+  </footer>
+</section>
 
 <div class="scrim" id="scrim"></div>
 <aside class="toc" id="toc" aria-label="Índice">

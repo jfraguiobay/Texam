@@ -13,9 +13,21 @@
   const toc = $('toc'), tocNav = $('tocNav'), scrim = $('scrim');
   const btnToc = $('btn-toc'), progressBar = $('progressBar');
 
+  // --- modo velocidad (RSVP) ---
+  const rsvp = $('rsvp'), rsvpBody = $('rsvpBody'), rsvpFocal = $('rsvpFocal');
+  const rPre = $('rPre'), rOrp = $('rOrp'), rPost = $('rPost');
+
   let currentKey = null;       // identidad del documento (nombre+tamaño)
   let chapters = [];           // secciones para el índice (epub)
   let tocObserver = null;
+
+  let words = [];              // tokens del documento: {text, para}
+  let wIdx = 0;                // palabra actual
+  let wpm = 300;               // velocidad
+  let playing = false;         // RSVP en marcha
+  let rTimer = null;           // temporizador del RSVP
+  let docKey = null;           // clave de identidad del documento
+  let mode = 'rsvp';           // 'rsvp' | 'flow'
 
   /* -------------------------------------------------- utilidades */
   const esc = (s) => s.replace(/[&<>"']/g, (c) => (
@@ -56,11 +68,14 @@
   function applyTheme(t) {
     document.documentElement.dataset.theme = t;
     store.set('texam.theme', t);
-    const b = $('themeBtn');
-    if (b) {
+    document.querySelector('meta[name="theme-color"]')
+      ?.setAttribute('content', t === 'dark' ? '#232220' : '#f6f3ee');
+    const label = t === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro';
+    for (const b of [$('themeBtn'), $('rsvpTheme')]) {
+      if (!b) continue;
       b.textContent = t === 'dark' ? '☀' : '☾';
-      b.title = t === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro';
-      b.setAttribute('aria-label', b.title);
+      b.title = label;
+      b.setAttribute('aria-label', label);
     }
   }
   applyTheme(store.get('texam.theme',
@@ -72,6 +87,15 @@
     store.set('texam.fontSize', String(fontSize));
   }
   applyFont();
+
+  // tamaño del pivote: más grande que el texto de lectura, y se adapta al ancho
+  let rsvpSize = parseInt(store.get('texam.rsvpSize', '0'), 10) ||
+    Math.round(Math.min(64, Math.max(34, (window.innerWidth || 390) * 0.13)));
+  function applyRsvpFont() {
+    document.documentElement.style.setProperty('--rsvp-size', rsvpSize + 'px');
+    store.set('texam.rsvpSize', String(rsvpSize));
+  }
+  applyRsvpFont();
 
   /* -------------------------------------------------- entrada de archivos */
   $('openBtn').addEventListener('click', () => fileInput.click());
@@ -509,12 +533,211 @@
     $('bookTitle').textContent = doc.title && doc.title !== name ? doc.title : name;
 
     showReader(true);
-    currentKey = 'texam.pos.' + name + ':' + size;
+    docKey = name + ':' + size;
+    currentKey = 'texam.pos.' + docKey;
     window.scrollTo(0, 0);
     restorePos();
     observeHeadings();
     updateProgress();
+
+    // tokens para el modo velocidad
+    words = tokenize(reader);
+    $('modeBtn').hidden = words.length === 0;
+    setMode(store.get('texam.mode', 'rsvp'));
   }
+
+  /* ============================================================
+     MODO VELOCIDAD — RSVP en torno a la ORP (punto óptimo de
+     reconocimiento). La palabra se parte en tres y la letra pivote
+     queda siempre clavada en el centro exacto de la pantalla.
+     ============================================================ */
+
+  wpm = parseInt(store.get('texam.wpm', '300'), 10) || 300;
+
+  const RSVP_BLOCKS = new Set(['P', 'DIV', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
+    'BLOCKQUOTE', 'PRE', 'TD', 'TH', 'SECTION', 'ARTICLE', 'FIGCAPTION', 'DT', 'DD',
+    'TABLE', 'TR', 'UL', 'OL', 'HR', 'BR', 'FIGURE', 'ASIDE', 'HEADER', 'FOOTER']);
+
+  // Aplana el documento a una lista de palabras, marcando dónde empieza cada párrafo.
+  function tokenize(root) {
+    const out = [];
+    let pending = true;
+    const push = (text) => {
+      for (const t of text.replace(/\s+/g, ' ').split(' ')) {
+        if (!t) continue;
+        out.push({ text: t, para: pending });
+        pending = false;
+      }
+    };
+    const walk = (node) => {
+      for (const child of node.childNodes) {
+        if (child.nodeType === 3) { push(child.nodeValue); continue; }
+        if (child.nodeType !== 1) continue;
+        const tag = child.tagName;
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') continue;
+        const block = RSVP_BLOCKS.has(tag);
+        if (block) pending = true;
+        walk(child);
+        if (block) pending = true;
+      }
+    };
+    walk(root);
+    return out;
+  }
+
+  // Tabla de la ORP según la longitud (criterio clásico de Spritz, 0-indexado).
+  function orpIndex(len) {
+    if (len <= 1) return 0;
+    if (len <= 5) return 1;
+    if (len <= 9) return 2;
+    if (len <= 13) return 3;
+    return 4;
+  }
+
+  // Duración de cada palabra: base por velocidad + ajuste por longitud y puntuación.
+  function intervalFor(text) {
+    const core = text.replace(/["'”’»)\]}]+$/u, '');
+    const bare = core.replace(/[^\p{L}\p{N}]/gu, '');
+    let ms = 60000 / wpm;
+    if (bare.length > 6) ms *= 1 + Math.min(0.75, (bare.length - 6) * 0.05);
+    const last = core.slice(-1);
+    if (/[.!?…]/.test(last)) ms *= 2.4;
+    else if (/[,;:—–]/.test(last)) ms *= 1.7;
+    return Math.max(60, ms);
+  }
+
+  function paintWord() {
+    const w = words[wIdx];
+    if (!w) { rPre.textContent = rOrp.textContent = rPost.textContent = ''; return; }
+    const i = Math.min(orpIndex(w.text.length), w.text.length - 1);
+    rPre.textContent = w.text.slice(0, i);
+    rOrp.textContent = w.text[i];
+    rPost.textContent = w.text.slice(i + 1);
+    rsvpFocal.classList.toggle('long', w.text.length > 15);
+  }
+
+  function updateMeter() {
+    const total = words.length || 1;
+    $('rsvpBar').style.width = ((wIdx / Math.max(1, total - 1)) * 100) + '%';
+    $('rsvpPos').textContent = (wIdx + 1).toLocaleString('es-ES') + ' / ' + total.toLocaleString('es-ES');
+    const mins = (total - wIdx) / Math.max(1, wpm);
+    $('rsvpEta').textContent = mins < 1 ? 'queda menos de 1 min'
+      : 'quedan ~' + (mins < 10 ? mins.toFixed(1) : Math.round(mins)) + ' min';
+  }
+
+  const saveWIdx = () => { if (docKey) store.set('texam.widx.' + docKey, String(wIdx)); };
+
+  function tick() {
+    if (!playing) return;
+    clearTimeout(rTimer);
+    rTimer = setTimeout(() => {
+      if (!playing) return;
+      if (wIdx >= words.length - 1) { pauseRsvp(); return; }
+      wIdx++;
+      paintWord(); updateMeter(); saveWIdx();
+      tick();
+    }, intervalFor(words[wIdx] ? words[wIdx].text : ''));
+  }
+
+  function playRsvp() {
+    if (playing || !words.length) return;
+    if (wIdx >= words.length - 1) { wIdx = 0; paintWord(); saveWIdx(); }
+    playing = true;
+    rsvp.classList.remove('paused');
+    $('rPlay').classList.add('playing');
+    $('rPlay').textContent = '⏸';
+    tick();
+  }
+
+  function pauseRsvp() {
+    playing = false;
+    clearTimeout(rTimer);
+    rsvp.classList.add('paused');
+    $('rPlay').classList.remove('playing');
+    $('rPlay').textContent = '▶';
+    saveWIdx();
+  }
+
+  function toggleRsvp() { playing ? pauseRsvp() : playRsvp(); }
+
+  function seek(delta) {
+    if (!words.length) return;
+    const was = playing; if (was) pauseRsvp();
+    wIdx = Math.max(0, Math.min(words.length - 1, wIdx + delta));
+    paintWord(); updateMeter(); saveWIdx();
+  }
+
+  const endsSentence = (t) => /[.!?…]["'”’»)\]}]*$/.test(t);
+
+  function jumpSentence(dir) {
+    if (!words.length) return;
+    if (playing) pauseRsvp();
+    let i = wIdx;
+    if (dir > 0) {
+      while (i < words.length - 1 && !endsSentence(words[i].text)) i++;
+      i = Math.min(words.length - 1, i + 1);
+    } else {
+      if (i > 0) i--;
+      while (i > 0 && !endsSentence(words[i - 1].text)) i--;
+    }
+    wIdx = Math.max(0, Math.min(words.length - 1, i));
+    paintWord(); updateMeter(); saveWIdx();
+  }
+
+  function setWpm(v) {
+    wpm = Math.max(150, Math.min(900, Math.round(v / 10) * 10));
+    store.set('texam.wpm', String(wpm));
+    $('spdRange').value = String(wpm);
+    $('spdVal').innerHTML = '<b>' + wpm + '</b> ppm';
+    updateMeter();
+  }
+
+  function startRsvp() {
+    $('rsvpTitle').textContent = $('bookTitle').textContent;
+    wIdx = Math.max(0, Math.min(words.length - 1,
+      parseInt(store.get('texam.widx.' + docKey, '0'), 10) || 0));
+    setWpm(wpm);
+    paintWord();
+    updateMeter();
+    pauseRsvp();
+  }
+
+  function setMode(next) {
+    mode = next === 'flow' ? 'flow' : 'rsvp';
+    store.set('texam.mode', mode);
+    const onRsvp = mode === 'rsvp';
+    $('modeBtn').textContent = onRsvp ? 'Continuo' : 'Velocidad';
+    $('modeBtn').title = onRsvp ? 'Ver el documento entero' : 'Leer palabra a palabra';
+    document.body.classList.toggle('rsvp-open', onRsvp);
+    if (onRsvp) {
+      rsvp.hidden = false;
+      startRsvp();
+    } else {
+      pauseRsvp();
+      rsvp.hidden = true;
+      window.scrollTo(0, 0);
+      restorePos();
+      observeHeadings();
+      updateProgress();
+    }
+  }
+
+  /* ---- controles del modo velocidad ---- */
+  rsvpBody.addEventListener('click', toggleRsvp);
+  $('rPlay').addEventListener('click', toggleRsvp);
+  $('rPrev10').addEventListener('click', () => seek(-10));
+  $('rNext10').addEventListener('click', () => seek(10));
+  $('rPrevS').addEventListener('click', () => jumpSentence(-1));
+  $('rNextS').addEventListener('click', () => jumpSentence(1));
+  $('spdRange').addEventListener('input', (e) => setWpm(+e.target.value));
+  $('spdDown').addEventListener('click', () => setWpm(wpm - 20));
+  $('spdUp').addEventListener('click', () => setWpm(wpm + 20));
+  $('rsvpTheme').addEventListener('click', () =>
+    applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
+  $('rFontInc').addEventListener('click', () => bumpFont(1));
+  $('rFontDec').addEventListener('click', () => bumpFont(-1));
+  $('rsvpExit').addEventListener('click', () => setMode('flow'));
+  $('modeBtn').addEventListener('click', () => setMode(mode === 'rsvp' ? 'flow' : 'rsvp'));
 
   function buildHeadingToc(root) {
     const out = [];
@@ -595,16 +818,39 @@
   }
 
   /* -------------------------------------------------- controles */
-  $('fontInc').addEventListener('click', () => { fontSize = Math.min(28, fontSize + 1); applyFont(); });
-  $('fontDec').addEventListener('click', () => { fontSize = Math.max(14, fontSize - 1); applyFont(); });
+  function bumpFont(d) {
+    if (mode === 'rsvp' && !rsvp.hidden) {
+      rsvpSize = Math.max(26, Math.min(96, rsvpSize + d * 2));
+      applyRsvpFont();
+    } else {
+      fontSize = Math.max(14, Math.min(28, fontSize + d));
+      applyFont();
+    }
+  }
+
+  $('fontInc').addEventListener('click', () => bumpFont(1));
+  $('fontDec').addEventListener('click', () => bumpFont(-1));
   $('themeBtn').addEventListener('click', () =>
     applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
 
   document.addEventListener('keydown', (e) => {
-    if (e.target.matches('input, textarea')) return;
-    if (e.key === '+' || e.key === '=') { fontSize = Math.min(28, fontSize + 1); applyFont(); }
-    else if (e.key === '-') { fontSize = Math.max(14, fontSize - 1); applyFont(); }
-    else if (e.key === 'j') window.scrollBy(0, window.innerHeight * 0.9);
+    if (e.target.matches('input, textarea, select, [contenteditable]')) return;
+    if (e.key === '+' || e.key === '=') { e.preventDefault(); bumpFont(1); return; }
+    if (e.key === '-') { e.preventDefault(); bumpFont(-1); return; }
+
+    if (!rsvp.hidden) {
+      // con un botón enfocado, espacio lo activa de forma nativa: no duplicar
+      const onControl = e.target instanceof Element && e.target.closest('button');
+      if (e.key === ' ' && !onControl) { e.preventDefault(); toggleRsvp(); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); jumpSentence(1); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); jumpSentence(-1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setWpm(wpm + 20); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); setWpm(wpm - 20); }
+      else if (e.key === 'Escape') setMode('flow');
+      return;
+    }
+
+    if (e.key === 'j') window.scrollBy(0, window.innerHeight * 0.9);
     else if (e.key === 'k') window.scrollBy(0, -window.innerHeight * 0.9);
     else if (e.key === 'Escape') closeToc();
   });
