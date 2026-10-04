@@ -1,0 +1,38 @@
+# Bienvenido a Texam
+
+**Texam** es un lector de textos que vive entero en tu navegador. Arrastra este
+archivo, o cualquiera de los otros de ejemplo, sobre la ventana para probarlo.
+
+## Qué puedes abrir
+
+- Documentos de texto plano (`.txt`)
+- Markdown (`.md`) — como este
+- Libros electrónicos (`.epub`)
+- Documentos de Word (`.docx` y `.doc`)
+- Texto enriquecido (`.rtf`), HTML y PDF
+
+## Atajos
+
+| Tecla | Acción |
+| --- | --- |
+| `+` / `-` | Subir o bajar el tamaño de la letra |
+| `j` / `k` | Avanzar o retroceder |
+| `Esc` | Cerrar el índice |
+
+> Todo se procesa en tu equipo. Ningún archivo se envía a ningún servidor.
+
+### Privacidad por diseño
+
+No hay cuentas, ni analítica, ni llamadas de red. Si quieres, desconecta el
+Wi‑Fi: Texam seguirá funcionando.
+
+## Un párrafo de relleno
+
+La lectura pausada es un pequeño lujo. Una tipografía serif, un ancho de línea
+cómodo y unos márgenes generosos hacen que quedarse en una página sea más
+agradable que saltar a la siguiente. Texam no intenta impresionar; intenta
+desaparecer.
+
+---
+
+Gracias por leer.

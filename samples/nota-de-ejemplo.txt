@@ -1,0 +1,10 @@
+Texam — fichero de texto plano
+
+Este es un párrafo de prueba.
+Con un salto de línea interno.
+
+Otro párrafo separado por una línea vacía.
+
+---
+
+Fin del documento.
